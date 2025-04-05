@@ -67,7 +67,7 @@ if uploaded_file:
     for index, row in df.iterrows():
         lat = row['y']  # عمود خط العرض
         lon = row['x']  # عمود خط الطول
-        meter_id = row['اسم']  # عمود اسم العداد
+        meter_id = row['الاسم']
 
         # تحميل الصورة بناءً على الإحداثيات
         img_path = download_image(lat, lon)
