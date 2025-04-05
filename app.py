@@ -385,16 +385,26 @@ if uploaded_file:
         st.stop()
 
   
-                # ✅ تحميل النموذج
-   try:
-    model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, source="github")
+ # ✅ تحميل النماذج
+try:
+    # تحميل نموذج YOLO من المسار المحلي
+    model = torch.load(MODEL_PATH)  # استخدم torch.load بدلاً من torch.hub.load لأنه نموذج محلي
     print("✅ تم تحميل YOLOv5 بنجاح!")
-   except Exception as e:
+except Exception as e:
     print(f"❌ خطأ في تحميل YOLOv5: {e}")
-                ML_MODEL_PATH = "isolation_forest_model.joblib"
-                st.session_state.model_yolo = model_yolo
-                st.session_state.model_ml = model_ml
-                st.success("✅ تم تحميل النماذج بنجاح")
+
+try:
+    # تحميل نموذج تعلم الآلة من المسار المحلي
+    model_ml = joblib.load(ML_MODEL_PATH)
+    print("✅ تم تحميل نموذج تعلم الآلة بنجاح!")
+except Exception as e:
+    print(f"❌ خطأ في تحميل نموذج تعلم الآلة: {e}")
+
+# حفظ النماذج في الجلسة
+st.session_state.model_yolo = model
+st.session_state.model_ml = model_ml
+st.success("✅ تم تحميل النماذج بنجاح")
+
 
 # -------------------------
 # الشريط الجانبي
