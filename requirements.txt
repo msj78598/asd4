@@ -1,11 +1,9 @@
-torch
+torch==2.6.0
 opencv-python-headless
 scikit-learn
-opencv-python
-torch==2.6.0
 torchvision==0.21.0
 streamlit==1.44.1
-numpy==2.2.4
+numpy>=1.23.0
 pandas==2.2.3
 Pillow==11.1.0
 matplotlib==3.10.1
