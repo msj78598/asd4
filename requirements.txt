@@ -8,14 +8,14 @@ scikit-learn==1.6.1
 joblib==1.4.2
 
 # Computer Vision
-opencv-python-headless==4.11.0.86  # بديل خفيف الوزن لـ opencv-python
+opencv-python-headless==4.11.0.86
 
 # Deep Learning
 torch==2.6.0
 torchvision==0.21.0
-ultralytics==8.3.69  # لتحميل ونمذجة YOLOv5/YOLOv8
+ultralytics==8.3.69
 
 # Utilities
 python-dateutil==2.9.0
-tqdm==4.67.1  # لشريط التقدم
-pyyaml==6.0.2  # لمعالجة ملفات التكوين
+tqdm==4.67.1
+pyyaml==6.0.2
