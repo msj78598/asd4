@@ -389,7 +389,8 @@ if uploaded_file:
     if st.session_state.model_yolo is None or st.session_state.model_ml is None:
         with st.spinner('جاري تحميل النماذج...'):
             try:
-                model_yolo = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, force_reload=True)
+                model_yolo = torch.hub.load('ultralytics/yolov5', 'custom', path=str(MODEL_PATH), force_reload=True)
+
                 model_ml = joblib.load(ML_MODEL_PATH)
                 st.session_state.model_yolo = model_yolo
                 st.session_state.model_ml = model_ml
