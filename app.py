@@ -18,13 +18,13 @@ MAP_TYPE = "satellite"
 # مسار النموذج المدرب YOLOv5
 MODEL_PATH = "best.pt"  # ضع مسار النموذج المدرب لديك
 
-# تحميل النموذج المدرب YOLOv5
-@st.cache_resource
+
+# بدلاً من استخدام torch.hub.load لتحميل النموذج من GitHub
 def load_model():
-    model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH)  # تحميل النموذج المدرب الخاص بك
+    model = torch.load(MODEL_PATH)  # تحميل النموذج المدرب المحلي
+    model.eval()  # تحويل النموذج إلى وضع التقييم
     return model
 
-model = load_model()
 
 # رفع الصورة من قبل المستخدم
 st.sidebar.header("اختيار موقع على الخريطة")
