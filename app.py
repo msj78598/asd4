@@ -11,6 +11,7 @@ import streamlit as st
 import urllib.parse
 import base64
 import io
+from ultralytics import YOLO
 
 # -------------------------
 # إعدادات عامة
@@ -29,10 +30,9 @@ MAP_TYPE = "satellite"
 
 # إعدادات المجلدات والمسارات
 IMG_DIR = "images"
-DETECTED_DIR = "DETECTED_IMAGES"
+DETECTED_DIR = "detected_images"
 MODEL_PATH = "best.pt"
 ML_MODEL_PATH = "isolation_forest_model.joblib"
-OUTPUT_EXCEL = "detected_low_usage.xlsx"
 
 # تعريف الحدود القصوى لاستهلاك الطاقة
 capacity_thresholds = {
@@ -92,7 +92,7 @@ def setup_ui():
     }
     .cards-container {
         display: grid;
-        grid-template-columns: repeat(3, 1fr); /* تحديد 3 أعمدة ثابتة في كل صف */
+        grid-template-columns: repeat(3, 1fr);
         gap: 15px;
         margin-top: 20px;
     }
@@ -148,19 +148,16 @@ def setup_ui():
         align-items: flex-start;
     }
     .card-image-container {
-    width: 200px;  /* زيادة العرض بشكل معتدل */
-    flex-shrink: 0;
-}
-
-.card-image {
-    width: 100%;
-    height: 150px;  /* زيادة الارتفاع بشكل معتدل */
-    object-fit: cover;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-}
-
-
+        width: 200px;
+        flex-shrink: 0;
+    }
+    .card-image {
+        width: 100%;
+        height: 150px;
+        object-fit: cover;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+    }
     .card-details {
         flex: 1;
         min-width: 0;
@@ -261,35 +258,35 @@ def pixel_to_area(lat, box):
 def detect_field(img_path, meter_id, info, model):
     try:
         results = model(img_path)
-        df_result = results.pandas().xyxy[0]
-        fields = df_result[df_result["name"] == "field"]
-        
-        if not fields.empty:
-            confidence = round(fields["confidence"].max() * 100, 2)
-            if confidence >= 85:
-                image = Image.open(img_path).convert("RGB")
-                draw = ImageDraw.Draw(image)
-                largest_field = fields.iloc[0]
-                box = [largest_field["xmin"], largest_field["ymin"], 
-                      largest_field["xmax"], largest_field["ymax"]]
-                draw.rectangle(box, outline="green", width=3)
-                area = pixel_to_area(info['y'], box)
-                draw.text((10, 10), f"ID: {meter_id}\nArea: {int(area)} m²", fill="yellow")
-                
-                os.makedirs(DETECTED_DIR, exist_ok=True)
-                image_path = os.path.join(DETECTED_DIR, f"{meter_id}.png")
-                image.save(image_path)
-                
-                return confidence, image_path, int(area)
+        boxes = results[0].boxes
+        if len(boxes) > 0:
+            largest_box = boxes[0]  # افتراض أن أول صندوق هو الأكبر
+            box = largest_box.xyxy[0].tolist()
+            conf = largest_box.conf.item()
+            
+            image = Image.open(img_path).convert("RGB")
+            draw = ImageDraw.Draw(image)
+            draw.rectangle(box, outline="green", width=3)
+            area = pixel_to_area(info['y'], box)
+            draw.text((10, 10), f"ID: {meter_id}\nArea: {int(area)} m²", fill="yellow")
+            
+            os.makedirs(DETECTED_DIR, exist_ok=True)
+            image_path = os.path.join(DETECTED_DIR, f"{meter_id}.png")
+            image.save(image_path)
+            
+            return conf * 100, image_path, int(area)
     except Exception as e:
         st.error(f"خطأ في معالجة الصورة: {e}")
     return None, None, None
 
 def predict_loss(info, model_ml):
-    X = [[info["Breaker Capacity"], info["الكمية"]]]
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    return model_ml.predict(X_scaled)[0]
+    try:
+        X = [[info["Breaker Capacity"], info["الكمية"]]]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        return model_ml.predict(X_scaled)[0]
+    except:
+        return -1
 
 def determine_priority(has_field, anomaly, consumption_check, high_priority_condition):
     if high_priority_condition:
@@ -331,27 +328,14 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# زر تحميل النتائج في أعلى الصفحة
-if 'results' in st.session_state and st.session_state.results:
-    # إنشاء ملف Excel للتحميل
-    df_results = pd.DataFrame(st.session_state.results)
-    df_results = df_results.sort_values(by=["x", "y"], ascending=[True, True])
-    df_results["رابط الموقع"] = df_results.apply(lambda row: generate_google_maps_link(row["x"], row["y"]), axis=1)
-    df_results = df_results.drop(columns=["x", "y"])
-    
-    file_path = "output/detected_low_usage_sorted.xlsx"
-    df_results.to_excel(file_path, index=False, engine='openpyxl')
-    
-    # عرض زر التحميل في أعلى الصفحة
-    with open(file_path, "rb") as f:
-        st.download_button(
-            label="📥 تحميل النتائج (Excel)",
-            data=f,
-            file_name="نتائج_الفحص.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            help="تحميل النتائج كملف Excel مع رابط الموقع مرتب حسب الإحداثيات",
-            key="top_download_button"
-        )
+# تهيئة حالة الجلسة
+if 'results' not in st.session_state:
+    st.session_state.results = []
+    st.session_state.df = None
+    st.session_state.model_yolo = None
+    st.session_state.model_ml = None
+    st.session_state.analysis_done = False
+    st.session_state.file_uploaded = False
 
 # قسم تحميل الملفات
 with st.expander("📁 تحميل البيانات", expanded=True):
@@ -362,18 +346,8 @@ with st.expander("📁 تحميل البيانات", expanded=True):
         key="data_uploader"
     )
 
-# تهيئة حالة الجلسة
-if 'results' not in st.session_state:
-    st.session_state.results = []
-    st.session_state.df = None
-    st.session_state.model_yolo = None
-    st.session_state.model_ml = None
-    st.session_state.analysis_done = False
-    st.session_state.file_uploaded = False
-
 if uploaded_file:
     st.session_state.file_uploaded = True
-    # تحميل البيانات مع تصحيح ترميز الأعمدة
     try:
         df = pd.read_excel(uploaded_file)
         df.columns = df.columns.str.strip()
@@ -385,27 +359,24 @@ if uploaded_file:
         st.error(f"خطأ في قراءة الملف: {e}")
         st.stop()
 
-    # تحميل النماذج
-    if st.session_state.model_yolo is None or st.session_state.model_ml is None:
-        with st.spinner('جاري تحميل النماذج...'):
-            try:
-                model_yolo = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, trust_repo=False)
-                model_ml = joblib.load(ML_MODEL_PATH)
-                st.session_state.model_yolo = model_yolo
-                st.session_state.model_ml = model_ml
-                st.success("✅ تم تحميل النماذج بنجاح")
-            except Exception as e:
-                st.error(f"خطأ في تحميل النماذج: {e}")
-                st.stop()
+# تحميل النماذج
+if st.session_state.file_uploaded and (st.session_state.model_yolo is None or st.session_state.model_ml is None):
+    with st.spinner('جاري تحميل النماذج...'):
+        try:
+            model_yolo = YOLO(MODEL_PATH)
+            model_ml = joblib.load(ML_MODEL_PATH)
+            st.session_state.model_yolo = model_yolo
+            st.session_state.model_ml = model_ml
+            st.success("✅ تم تحميل النماذج بنجاح")
+        except Exception as e:
+            st.error(f"خطأ في تحميل النماذج: {e}")
+            st.stop()
 
-# -------------------------
 # الشريط الجانبي
-# -------------------------
 if st.session_state.file_uploaded:
     st.sidebar.markdown("### 🛠️ أدوات التحكم")
     
-    # زر تحليل البيانات
-    if st.sidebar.button("▶️ بدء تحليل البيانات", key="analyze_btn", help="انقر لبدء عملية تحليل البيانات"):
+    if st.sidebar.button("▶️ بدء تحليل البيانات", key="analyze_btn"):
         with st.spinner('جاري تحليل البيانات...'):
             results = []
             gallery = set()
@@ -437,7 +408,7 @@ if st.session_state.file_uploaded:
                             "رقم العداد": meter_id,
                             "المكتب": office_number,
                             "الأولوية": priority,
-                            "ثقة الكشف": f"{conf}%",
+                            "ثقة الكشف": f"{conf:.2f}%",
                             "المساحة": f"{area:,} م²",
                             "الاستهلاك": f"{row['الكمية']:,} ك.و.س",
                             "سعة القاطع": f"{row['Breaker Capacity']:,} أمبير",
@@ -453,7 +424,6 @@ if st.session_state.file_uploaded:
             st.session_state.analysis_done = True
             st.rerun()
 
-    # إحصائيات سريعة
     if st.session_state.analysis_done:
         st.sidebar.markdown("### 📊 إحصائيات سريعة")
         results = st.session_state.results
@@ -465,17 +435,35 @@ if st.session_state.file_uploaded:
         st.sidebar.metric("🟠 حالات متوسطة الخطورة", medium_priority)
         st.sidebar.metric("🟢 حالات منخفضة الخطورة", low_priority)
 
-# -------------------------
 # تبويبات العرض الرئيسية
-# -------------------------
 if st.session_state.file_uploaded:
     tab1, tab2 = st.tabs(["🎯 النتائج", "📊 البيانات الخام"])
 
     with tab1:
         if st.session_state.analysis_done:
             st.subheader("النتائج المباشرة")
-            results_container = st.container()
+            
+            # زر تحميل النتائج
+            if st.session_state.results:
+                df_results = pd.DataFrame(st.session_state.results)
+                df_results = df_results.sort_values(by=["x", "y"], ascending=[True, True])
+                df_results["رابط الموقع"] = df_results.apply(lambda row: generate_google_maps_link(row["x"], row["y"]), axis=1)
+                df_results = df_results.drop(columns=["x", "y"])
+                
+                file_path = "output/detected_low_usage_sorted.xlsx"
+                df_results.to_excel(file_path, index=False, engine='openpyxl')
+                
+                with open(file_path, "rb") as f:
+                    st.download_button(
+                        label="📥 تحميل النتائج (Excel)",
+                        data=f,
+                        file_name="نتائج_الفحص.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="top_download_button"
+                    )
 
+            # عرض النتائج
+            results_container = st.container()
             with results_container:
                 st.markdown('<div class="cards-container">', unsafe_allow_html=True)
                 for result in st.session_state.results:
@@ -527,12 +515,9 @@ if st.session_state.file_uploaded:
                                 result['رقم العداد'],
                                 float(result['ثقة الكشف'].replace('%', '')),
                                 int(result['المساحة'].replace(' م²', '').replace(',', '')),
-
                                 result['رابط الموقع'],
                                 float(result['الاستهلاك'].replace(' ك.و.س', '').replace(',', '')),
-
                                 float(result['سعة القاطع'].replace(' أمبير', '').replace(',', '')),
-
                                 result['المكتب'],
                                 result['الأولوية']
                             )}" class="action-btn whatsapp-btn" target="_blank">واتساب</a>
@@ -541,19 +526,6 @@ if st.session_state.file_uploaded:
                     </div>
                     """, unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
-
-            # زر تحميل إضافي في أسفل الصفحة
-            st.markdown("---")
-            st.markdown("### خيارات التصدير")
-            with open(file_path, "rb") as f:
-                st.download_button(
-                    label="📥 تحميل النتائج (Excel)",
-                    data=f,
-                    file_name="نتائج_الفحص.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="تحميل النتائج كملف Excel مع رابط الموقع مرتب حسب الإحداثيات",
-                    key="bottom_download_button"
-                )
         else:
             st.info("⏳ يرجى النقر على زر 'بدء تحليل البيانات' في الشريط الجانبي لرؤية النتائج")
 
