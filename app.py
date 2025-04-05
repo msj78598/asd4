@@ -386,10 +386,10 @@ if uploaded_file:
 
   
                 # ✅ تحميل النموذج
-try:
+   try:
     model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, source="github")
     print("✅ تم تحميل YOLOv5 بنجاح!")
-except Exception as e:
+   except Exception as e:
     print(f"❌ خطأ في تحميل YOLOv5: {e}")
                 ML_MODEL_PATH = "isolation_forest_model.joblib"
                 st.session_state.model_yolo = model_yolo
