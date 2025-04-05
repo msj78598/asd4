@@ -395,9 +395,6 @@ if uploaded_file:
                 st.session_state.model_yolo = model_yolo
                 st.session_state.model_ml = model_ml
                 st.success("✅ تم تحميل النماذج بنجاح")
-            except Exception as e:
-                st.error(f"خطأ في تحميل النماذج: {e}")
-                st.stop()
 
 # -------------------------
 # الشريط الجانبي
