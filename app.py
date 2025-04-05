@@ -29,7 +29,7 @@ MAP_TYPE = "satellite"
 
 # إعدادات المجلدات والمسارات
 IMG_DIR = "images"
-DETECTED_DIR = "DETECTED_FIELDS/FIELDS/farms"
+DETECTED_DIR = "DETECTED_IMAGES"
 MODEL_PATH = "best.pt"
 ML_MODEL_PATH = "isolation_forest_model.joblib"
 OUTPUT_EXCEL = "output/detected_low_usage.xlsx"
