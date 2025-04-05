@@ -384,11 +384,13 @@ if uploaded_file:
         st.error(f"خطأ في قراءة الملف: {e}")
         st.stop()
 
-    # تحميل النماذج
-    if st.session_state.model_yolo is None or st.session_state.model_ml is None:
-        with st.spinner('جاري تحميل النماذج...'):
-            try:
-                MODEL_PATH = "best.pt"
+  
+                # ✅ تحميل النموذج
+try:
+    model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, source="github")
+    print("✅ تم تحميل YOLOv5 بنجاح!")
+except Exception as e:
+    print(f"❌ خطأ في تحميل YOLOv5: {e}")
                 ML_MODEL_PATH = "isolation_forest_model.joblib"
                 st.session_state.model_yolo = model_yolo
                 st.session_state.model_ml = model_ml
