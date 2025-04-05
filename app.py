@@ -1,16 +1,13 @@
 import os
+import pandas as pd
 import torch
 import requests
 import streamlit as st
-from PIL import Image, ImageDraw
+from PIL import Image
 import io
 
-# إعدادات واجهة المستخدم Streamlit
-st.set_page_config(page_title="اكتشاف الحقول الزراعية باستخدام YOLOv5", layout="wide")
-st.title("نظام اكتشاف الحقول الزراعية")
-
 # إعدادات API لقوقل ماب
-API_KEY = "AIzaSyAY7NJrBjS42s6upa9z_qgNLVXESuu366Q"  # ضع هنا مفتاح API الخاص بك
+API_KEY = "AIzaSyAY7NJrBjS42s6upa9z_qgNLVXESuu366Q"  # مفتاح API الخاص بك
 ZOOM = 16
 IMG_SIZE = 640
 MAP_TYPE = "satellite"
@@ -18,20 +15,19 @@ MAP_TYPE = "satellite"
 # مسار النموذج المدرب YOLOv5
 MODEL_PATH = "best.pt"  # ضع مسار النموذج المدرب لديك
 
-
-# بدلاً من استخدام torch.hub.load لتحميل النموذج من GitHub
+# تحميل النموذج المدرب
+@st.cache_resource
 def load_model():
     model = torch.load(MODEL_PATH)  # تحميل النموذج المدرب المحلي
-    model.eval()  # تحويل النموذج إلى وضع التقييم
+    model.eval()  # وضع النموذج في وضع التقييم
     return model
 
+model = load_model()
 
-# رفع الصورة من قبل المستخدم
-st.sidebar.header("اختيار موقع على الخريطة")
-lat = st.sidebar.number_input("خط العرض", value=21.4225)
-lon = st.sidebar.number_input("خط الطول", value=39.8262)
+# تحميل الملف من المستخدم
+uploaded_file = st.file_uploader("رفع ملف الإحداثيات (Excel)", type=["xlsx"])
 
-# تحميل الصورة من قوقل ماب بناءً على الإحداثيات
+# تحميل الصور من قوقل ماب بناءً على الإحداثيات
 def download_image(lat, lon):
     img_path = os.path.join("images", f"{lat}_{lon}.png")
     if os.path.exists(img_path):
@@ -55,37 +51,50 @@ def download_image(lat, lon):
         st.error(f"خطأ في تحميل الصورة: {e}")
         return None
 
-# جلب الصورة بناءً على الإحداثيات
-img_path = download_image(lat, lon)
-if img_path:
-    # قراءة الصورة
-    image = Image.open(img_path)
-    st.image(image, caption="الصورة المدخلة من خرائط قوقل", use_column_width=True)
+# معالجة البيانات وقراءة الملف
+if uploaded_file:
+    df = pd.read_excel(uploaded_file)
+    df.columns = df.columns.str.strip()
+    st.write("تم تحميل الملف بنجاح!")
+    st.dataframe(df)  # عرض البيانات
 
-    # تحويل الصورة إلى بيانات tensor لـ YOLOv5
-    img_bytes = io.BytesIO()
-    image.save(img_bytes, format='PNG')
-    img_bytes.seek(0)
+    # معالجة كل صف من البيانات
+    for index, row in df.iterrows():
+        lat = row['y']  # عمود خط العرض
+        lon = row['x']  # عمود خط الطول
+        meter_id = row['اسم']  # عمود اسم العداد
 
-    # استخدم النموذج للكشف عن الأجسام
-    results = model(img_bytes)
+        # تحميل الصورة بناءً على الإحداثيات
+        img_path = download_image(lat, lon)
+        if img_path:
+            # قراءة الصورة
+            image = Image.open(img_path)
+            st.image(image, caption=f"الصورة للموقع: {lat}, {lon}", use_column_width=True)
 
-    # عرض النتائج
-    st.header("النتائج:")
-    st.write("تم الكشف عن الأجسام في الصورة.")
-    st.image(results.render()[0])  # عرض الصورة بعد التعرف على الحقول
+            # تحويل الصورة إلى بيانات tensor لـ YOLOv5
+            img_bytes = io.BytesIO()
+            image.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
 
-    # إظهار معلومات عن الأجسام المكتشفة
-    results_df = results.pandas().xyxy[0]
-    st.write(results_df)  # عرض البيانات في جدول
+            # استخدم النموذج للكشف عن الأجسام
+            results = model(img_bytes)
 
-    # إضافة رابط لتخزين الصورة الناتجة
-    output_image_path = "detected_field_image.jpg"
-    results.save(output_image_path)
+            # عرض النتائج
+            st.header(f"النتائج للموقع: {lat}, {lon}")
+            st.write("تم الكشف عن الأجسام في الصورة.")
+            st.image(results.render()[0])  # عرض الصورة بعد التعرف على الحقول
 
-    st.download_button(
-        label="تحميل الصورة الناتجة",
-        data=open(output_image_path, "rb"),
-        file_name=output_image_path,
-        mime="image/jpeg"
-    )
+            # إظهار معلومات عن الأجسام المكتشفة
+            results_df = results.pandas().xyxy[0]
+            st.write(results_df)  # عرض البيانات في جدول
+
+            # إضافة رابط لتخزين الصورة الناتجة
+            output_image_path = "detected_field_image.jpg"
+            results.save(output_image_path)
+
+            st.download_button(
+                label="تحميل الصورة الناتجة",
+                data=open(output_image_path, "rb"),
+                file_name=output_image_path,
+                mime="image/jpeg"
+            )
