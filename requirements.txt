@@ -1,5 +1,6 @@
-torch==2.6.0
+torch==2.0.0
 opencv-python-headless
+ultralytics==8.3.69
 scikit-learn
 joblib
 streamlit
@@ -7,4 +8,3 @@ pandas
 Pillow
 requests
 openpyxl
-ultralytics
