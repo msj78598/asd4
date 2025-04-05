@@ -352,3 +352,212 @@ if 'results' in st.session_state and st.session_state.results:
             help="تحميل النتائج كملف Excel مع رابط الموقع مرتب حسب الإحداثيات",
             key="top_download_button"
         )
+
+# قسم تحميل الملفات
+with st.expander("📁 تحميل البيانات", expanded=True):
+    uploaded_file = st.file_uploader(
+        "رفع ملف البيانات (Excel)",
+        type=["xlsx"],
+        help="يرجى رفع ملف Excel يحتوي على بيانات العملاء",
+        key="data_uploader"
+    )
+
+# تهيئة حالة الجلسة
+if 'results' not in st.session_state:
+    st.session_state.results = []
+    st.session_state.df = None
+    st.session_state.model_yolo = None
+    st.session_state.model_ml = None
+    st.session_state.analysis_done = False
+    st.session_state.file_uploaded = False
+
+if uploaded_file:
+    st.session_state.file_uploaded = True
+    # تحميل البيانات مع تصحيح ترميز الأعمدة
+    try:
+        df = pd.read_excel(uploaded_file)
+        df.columns = df.columns.str.strip()
+        df["cont"] = df["الاشتراك"].astype(str).str.strip()
+        df["المكتب"] = df["المكتب"].astype(str)
+        df["الكمية"] = pd.to_numeric(df["الكمية"], errors="coerce")
+        st.session_state.df = df
+    except Exception as e:
+        st.error(f"خطأ في قراءة الملف: {e}")
+        st.stop()
+
+    # تحميل النماذج
+    if st.session_state.model_yolo is None or st.session_state.model_ml is None:
+        with st.spinner('جاري تحميل النماذج...'):
+            try:
+                model_yolo = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, force_reload=True)
+                model_ml = joblib.load(ML_MODEL_PATH)
+                st.session_state.model_yolo = model_yolo
+                st.session_state.model_ml = model_ml
+                st.success("✅ تم تحميل النماذج بنجاح")
+            except Exception as e:
+                st.error(f"خطأ في تحميل النماذج: {e}")
+                st.stop()
+
+# -------------------------
+# الشريط الجانبي
+# -------------------------
+if st.session_state.file_uploaded:
+    st.sidebar.markdown("### 🛠️ أدوات التحكم")
+    
+    # زر تحليل البيانات
+    if st.sidebar.button("▶️ بدء تحليل البيانات", key="analyze_btn", help="انقر لبدء عملية تحليل البيانات"):
+        with st.spinner('جاري تحليل البيانات...'):
+            results = []
+            gallery = set()
+            progress_bar = st.sidebar.progress(0)
+            total_rows = len(st.session_state.df)
+
+            for idx, row in st.session_state.df.iterrows():
+                progress = (idx + 1) / total_rows
+                progress_bar.progress(progress)
+
+                meter_id = str(row["cont"])
+                lat, lon = row['y'], row['x']
+                office_number = row["المكتب"]
+                img_path = download_image(lat, lon, meter_id)
+
+                if img_path:
+                    conf, img_detected, area = detect_field(img_path, meter_id, row, st.session_state.model_yolo)
+
+                    if conf is not None and img_detected is not None and (conf, img_detected) not in gallery:
+                        gallery.add((conf, img_detected))
+
+                        anomaly = predict_loss(row, st.session_state.model_ml)
+                        capacity_limit = capacity_thresholds.get(row['Breaker Capacity'], 0)
+                        consumption_check = row['الكمية'] < 0.5 * capacity_limit
+                        high_priority_condition = (conf >= 85 and row['الكمية'] == 0) or (conf >= 85 and row['Breaker Capacity'] < 200)
+                        priority = determine_priority(conf >= 85, anomaly, consumption_check, high_priority_condition)
+
+                        result_row = {
+                            "رقم العداد": meter_id,
+                            "المكتب": office_number,
+                            "الأولوية": priority,
+                            "ثقة الكشف": f"{conf}%",
+                            "المساحة": f"{area:,} م²",
+                            "الاستهلاك": f"{row['الكمية']:,} ك.و.س",
+                            "سعة القاطع": f"{row['Breaker Capacity']:,} أمبير",
+                            "img_path": img_detected,
+                            "رابط الموقع": generate_google_maps_link(lat, lon),
+                            "x": row['x'],
+                            "y": row['y']
+                        }
+                        results.append(result_row)
+
+            progress_bar.empty()
+            st.session_state.results = results
+            st.session_state.analysis_done = True
+            st.rerun()
+
+    # إحصائيات سريعة
+    if st.session_state.analysis_done:
+        st.sidebar.markdown("### 📊 إحصائيات سريعة")
+        results = st.session_state.results
+        high_priority = len([r for r in results if r["الأولوية"] in ["أولوية عالية جدًا", "قصوى"]])
+        medium_priority = len([r for r in results if r["الأولوية"] == "متوسطة"])
+        low_priority = len([r for r in results if r["الأولوية"] == "منخفضة"])
+
+        st.sidebar.metric("🔴 حالات عالية الخطورة", high_priority)
+        st.sidebar.metric("🟠 حالات متوسطة الخطورة", medium_priority)
+        st.sidebar.metric("🟢 حالات منخفضة الخطورة", low_priority)
+
+# -------------------------
+# تبويبات العرض الرئيسية
+# -------------------------
+if st.session_state.file_uploaded:
+    tab1, tab2 = st.tabs(["🎯 النتائج", "📊 البيانات الخام"])
+
+    with tab1:
+        if st.session_state.analysis_done:
+            st.subheader("النتائج المباشرة")
+            results_container = st.container()
+
+            with results_container:
+                st.markdown('<div class="cards-container">', unsafe_allow_html=True)
+                for result in st.session_state.results:
+                    priority = result["الأولوية"]
+                    priority_class = {
+                        "أولوية عالية جدًا": "high",
+                        "قصوى": "high",
+                        "متوسطة": "medium",
+                        "منخفضة": "low"
+                    }.get(priority, "")
+
+                    img_base64 = get_base64_image(result["img_path"])
+                    
+                    st.markdown(f"""
+                    <div class="card priority-{priority_class}">
+                        <div class="card-header">
+                            <h4 style="margin:0;">العداد: {result['رقم العداد']}</h4>
+                            <span class="priority-badge {priority_class}-badge">{priority}</span>
+                        </div>
+                        <div class="card-content">
+                            <div class="card-image-container">
+                                <img class="card-image" src="data:image/png;base64,{img_base64}" alt="صورة الحقل">
+                            </div>
+                            <div class="card-details">
+                                <div class="detail-row">
+                                    <span class="detail-label">المكتب:</span>
+                                    <span class="detail-value">{result['المكتب']}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">الثقة:</span>
+                                    <span class="detail-value">{result['ثقة الكشف']}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">المساحة:</span>
+                                    <span class="detail-value">{result['المساحة']}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">الاستهلاك:</span>
+                                    <span class="detail-value">{result['الاستهلاك']}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">سعة القاطع:</span>
+                                    <span class="detail-value">{result['سعة القاطع']}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <a href="{generate_whatsapp_share_link(
+                                result['رقم العداد'],
+                                float(result['ثقة الكشف'].replace('%', '')),
+                                int(result['المساحة'].replace(' م²', '').replace(',', '')),
+
+                                result['رابط الموقع'],
+                                float(result['الاستهلاك'].replace(' ك.و.س', '').replace(',', '')),
+
+                                float(result['سعة القاطع'].replace(' أمبير', '').replace(',', '')),
+
+                                result['المكتب'],
+                                result['الأولوية']
+                            )}" class="action-btn whatsapp-btn" target="_blank">واتساب</a>
+                            <a href="{result['رابط الموقع']}" class="action-btn map-btn" target="_blank">خريطة</a>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # زر تحميل إضافي في أسفل الصفحة
+            st.markdown("---")
+            st.markdown("### خيارات التصدير")
+            with open(file_path, "rb") as f:
+                st.download_button(
+                    label="📥 تحميل النتائج (Excel)",
+                    data=f,
+                    file_name="نتائج_الفحص.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="تحميل النتائج كملف Excel مع رابط الموقع مرتب حسب الإحداثيات",
+                    key="bottom_download_button"
+                )
+        else:
+            st.info("⏳ يرجى النقر على زر 'بدء تحليل البيانات' في الشريط الجانبي لرؤية النتائج")
+
+    with tab2:
+        if st.session_state.df is not None:
+            st.subheader("البيانات الخام")
+            st.dataframe(st.session_state.df)
