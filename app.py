@@ -11,7 +11,17 @@ import streamlit as st
 import urllib.parse
 import base64
 import io
-from ultralytics import YOLO
+import sys
+import cv2  # يجب استيراده قبل ultralytics
+
+# إصلاح مشكلة OpenCV
+os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
+
+try:
+    from ultralytics import YOLO
+except ImportError as e:
+    st.error(f"خطأ في تحميل المكتبات: {e}")
+    st.stop()
 
 # -------------------------
 # إعدادات عامة
