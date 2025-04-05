@@ -32,7 +32,8 @@ IMG_DIR = "images"
 DETECTED_DIR = "DETECTED_IMAGES"
 MODEL_PATH = "best.pt"
 ML_MODEL_PATH = "isolation_forest_model.joblib"
-OUTPUT_EXCEL = "output/detected_low_usage.xlsx"
+OUTPUT_EXCEL = "detected_low_usage.xlsx"
+"
 
 # تعريف الحدود القصوى لاستهلاك الطاقة
 capacity_thresholds = {
