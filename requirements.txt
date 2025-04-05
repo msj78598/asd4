@@ -1,3 +1,5 @@
+torch
+opencv-python-headless
 scikit-learn
 opencv-python
 torch==2.6.0
