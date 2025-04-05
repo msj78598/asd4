@@ -15,14 +15,17 @@ MAP_TYPE = "satellite"
 # مسار النموذج المدرب YOLOv5
 MODEL_PATH = "best.pt"  # ضع مسار النموذج المدرب لديك
 
-# تحميل النموذج المدرب
-@st.cache_resource
+import torch
+
+# تحميل نموذج YOLOv5 المدرب عبر GitHub (إذا كنت تستخدم هذا النموذج)
 def load_model():
-    model = torch.load(MODEL_PATH)  # تحميل النموذج المدرب المحلي
+    model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH)  # تحميل النموذج المدرب
     model.eval()  # وضع النموذج في وضع التقييم
     return model
 
+# تحميل النموذج
 model = load_model()
+
 
 # تحميل الملف من المستخدم
 uploaded_file = st.file_uploader("رفع ملف الإحداثيات (Excel)", type=["xlsx"])
