@@ -388,8 +388,8 @@ if uploaded_file:
     if st.session_state.model_yolo is None or st.session_state.model_ml is None:
         with st.spinner('جاري تحميل النماذج...'):
             try:
-                MODEL_PATH = "best.pt"  # تأكد من تحديث المسار بشكل صحيح
-                model_ml = joblib.load(ML_MODEL_PATH)
+                MODEL_PATH = "best.pt"
+                ML_MODEL_PATH = "isolation_forest_model.joblib"
                 st.session_state.model_yolo = model_yolo
                 st.session_state.model_ml = model_ml
                 st.success("✅ تم تحميل النماذج بنجاح")
